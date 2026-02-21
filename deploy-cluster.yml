@@ -1,0 +1,85 @@
+---
+- name: Phase 1 - Provision RKE2 Cluster via Rancher API
+  hosts: localhost
+  gather_facts: no
+  vars:
+    # In a production setup, the token should be passed via AWX Vault, not hardcoded.
+    rancher_url: "https://prime.192.168.8.76.sslip.io/"
+    rancher_api_url: "https://prime.192.168.8.76.sslip.io/v3"
+    rancher_token: "token-xgwxv:trv8hhdxl5ql7w6kn4qsbtt8sl4sj592mf74d8plgxkj676fr7g86b"
+    cluster_name: "ansible-rke2"
+    kubernetes_version: "v1.34.3+rke2r1"
+
+  tasks:
+    - name: 1. Apply the RKE2 Cluster CRD to Rancher
+      kubernetes.core.k8s:
+        state: present
+        # Authenticate natively to Rancher's K8s proxy without a kubeconfig
+        host: "{{ rancher_api_url }}"
+        api_key: "{{ rancher_token }}"
+        validate_certs: no 
+        definition:
+          apiVersion: provisioning.cattle.io/v1
+          kind: Cluster
+          metadata:
+            name: "{{ cluster_name }}"
+            namespace: fleet-default
+          spec:
+            kubernetesVersion: "{{ kubernetes_version }}"
+            rkeConfig: {} 
+
+    - name: 2. Wait for Rancher to generate the Cluster ID
+      uri:
+        url: "{{ rancher_url }}/v3/clusters?name={{ cluster_name }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ rancher_token }}"
+        return_content: yes
+        validate_certs: no
+      register: cluster_info
+      until: cluster_info.json.data | length > 0
+      retries: 15
+      delay: 5
+
+    - name: 3. Retrieve the Node Registration Command
+      uri:
+        url: "{{ rancher_url }}/v3/clusterRegistrationTokens?clusterId={{ cluster_info.json.data[0].id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ rancher_token }}"
+        return_content: yes
+        validate_certs: no
+      register: reg_token
+      until: reg_token.json.data | length > 0 and reg_token.json.data[0].insecureNodeCommand is defined
+      retries: 15
+      delay: 5
+
+    - name: 4. Store base command globally
+      add_host:
+        name: "RANCHER_VARS"
+        base_cmd: "{{ reg_token.json.data[0].insecureNodeCommand }}"
+
+# ---------------------------------------------------------
+# Phase 2: Connect to the bare-metal nodes and register them
+# ---------------------------------------------------------
+- name: Phase 2 - Execute Registration on Target Nodes
+  hosts: rke2_nodes
+  become: yes
+  tasks:
+    - name: 5. Check if RKE2 is already installed
+      stat:
+        path: /etc/rancher/rke2/config.yaml
+      register: rke2_check
+
+    - name: 6. Run the Rancher registration script with dynamic roles
+      shell: >
+        {{ hostvars['RANCHER_VARS']['base_cmd'] }}
+        {% if 'etcd' in group_names %}--etcd {% endif %}
+        {% if 'controlplane' in group_names %}--controlplane {% endif %}
+        {% if 'worker' in group_names %}--worker {% endif %}
+      when: not rke2_check.stat.exists
+
+    - name: 7. Status Message
+      debug:
+        msg: "Node is already configured with RKE2. Skipping."
+      when: rke2_check.stat.exists
