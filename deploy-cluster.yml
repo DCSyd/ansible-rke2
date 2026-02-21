@@ -5,7 +5,8 @@
   vars:
     # In a production setup, the token should be passed via AWX Vault, not hardcoded.
     rancher_url: "https://prime.192.168.8.76.sslip.io/"
-    rancher_api_url: "https://prime.192.168.8.76.sslip.io/v3"
+    #rancher_api_url: "https://prime.192.168.8.76.sslip.io/v3"
+    rancher_api_url: https://prime.192.168.8.76.sslip.io/k8s/clusters/local
     rancher_token: "token-m8989:dfckm8kltd52mrxdkvhcw2wgjqnjrbnf4b8b84bz76p7f699zp9w8f"
     cluster_name: "ansible-rke2"
     kubernetes_version: "v1.34.3+rke2r1"
