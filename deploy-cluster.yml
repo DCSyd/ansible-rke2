@@ -25,6 +25,8 @@
           metadata:
             name: "{{ cluster_name }}"
             namespace: fleet-default
+            labels:
+              deploy-frr: allowed
           spec:
             kubernetesVersion: "{{ kubernetes_version }}"
             rkeConfig: {} 
