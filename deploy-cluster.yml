@@ -27,6 +27,7 @@
             namespace: fleet-default
             labels:
               deploy-frr: allowed
+              deploy-longhorn: allowed
           spec:
             kubernetesVersion: "{{ kubernetes_version }}"
             rkeConfig: {} 
@@ -86,3 +87,29 @@
       debug:
         msg: "Node is already configured with RKE2. Skipping."
       when: rke2_check.stat.exists
+# -------------------------------------------------------------
+    # RANCHER FLEET: Deploy App to the new cluster via GitRepo
+    # -------------------------------------------------------------
+    - name: Create GitRepo resource in Rancher for Fleet deployment
+      kubernetes.core.k8s:
+        state: present
+        host: "{{ rancher_api_url }}"
+        api_key: "{{ rancher_token }}"
+        validate_certs: no
+        definition:
+          apiVersion: fleet.cattle.io/v1alpha1
+          kind: GitRepo
+          metadata:
+            name: longhorn
+            namespace: fleet-default 
+          spec:
+            repo: https://github.com/DCSyd/infra-apps/
+            branch: main
+            paths:
+              - longhorn
+            targets:
+              - clusterSelector:
+                  matchLabels:
+                    deploy-longhorn: allowed
+      delegate_to: localhost
+      run_once: true
